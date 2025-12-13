@@ -67,6 +67,10 @@ def report(
     sep: str = typer.Option(",", help="Разделитель в CSV."),
     encoding: str = typer.Option("utf-8", help="Кодировка файла."),
     max_hist_columns: int = typer.Option(6, help="Максимум числовых колонок для гистограмм."),
+    top_k_categories: int = typer.Option(5, help="Сколько top-значений выводить для категорий."),
+    title: str = typer.Option("EDA Report", help="Заголовок отчёта (в файле Markdown)."),
+    min_missing_share: float = typer.Option(0.05,
+                                            help="Порог доли пропусков (0..1) для выделения проблемных колонок."),
 ) -> None:
     """
     Сгенерировать полный EDA-отчёт:
@@ -86,7 +90,7 @@ def report(
     summary_df = flatten_summary_for_print(summary)
     missing_df = missing_table(df)
     corr_df = correlation_matrix(df)
-    top_cats = top_categories(df)
+    top_cats = top_categories(df, top_k=top_k_categories)
 
     # 2. Качество в целом
     quality_flags = compute_quality_flags(summary, missing_df)
@@ -102,12 +106,22 @@ def report(
     # 4. Markdown-отчёт
     md_path = out_root / "report.md"
     with md_path.open("w", encoding="utf-8") as f:
-        f.write(f"# EDA-отчёт\n\n")
+        f.write(f"# {title}\n\n")
         f.write(f"Исходный файл: `{Path(path).name}`\n\n")
         f.write(f"Строк: **{summary.n_rows}**, столбцов: **{summary.n_cols}**\n\n")
 
+        f.write("## Параметры отчета\n")
+        f.write(f"- Top-K Categories: {top_k_categories}\n")
+        f.write(f"- Min Missing Share Threshold: {min_missing_share:.0%}\n\n")
+
         f.write("## Качество данных (эвристики)\n\n")
         f.write(f"- Оценка качества: **{quality_flags['quality_score']:.2f}**\n")
+
+        if 'has_constant_columns' in quality_flags:
+            f.write(f"- Есть константные колонки: **{quality_flags['has_constant_columns']}**\n")
+        if 'has_suspicious_id_duplicates' in quality_flags:
+            f.write(f"- Подозрительные дубли в ID: **{quality_flags['has_suspicious_id_duplicates']}**\n")
+
         f.write(f"- Макс. доля пропусков по колонке: **{quality_flags['max_missing_share']:.2%}**\n")
         f.write(f"- Слишком мало строк: **{quality_flags['too_few_rows']}**\n")
         f.write(f"- Слишком много колонок: **{quality_flags['too_many_columns']}**\n")
@@ -120,6 +134,12 @@ def report(
         if missing_df.empty:
             f.write("Пропусков нет или датасет пуст.\n\n")
         else:
+            high_missing = missing_df[missing_df["missing_share"] > min_missing_share]
+            if not high_missing.empty:
+                f.write(f"### Колонки с >{min_missing_share:.0%} пропусков:\n")
+                f.write(high_missing.to_markdown())
+                f.write("\n\n")
+
             f.write("См. файлы `missing.csv` и `missing_matrix.png`.\n\n")
 
         f.write("## Корреляция числовых признаков\n\n")
