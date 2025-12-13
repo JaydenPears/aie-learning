@@ -1,4 +1,0 @@
-name,dtype,non_null,missing,missing_share,unique,is_numeric,min,max,mean,std
-user_id,int64,3,0,0.0,2,True,1.0,3.0,1.6666666666666667,1.1547005383792517
-const_col,object,3,0,0.0,1,False,,,,
-value,int64,3,0,0.0,3,True,10.0,30.0,20.0,10.0
