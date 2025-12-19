@@ -172,12 +172,17 @@ def top_categories(
 
 def compute_quality_flags(summary: DatasetSummary, missing_df: pd.DataFrame) -> Dict[str, Any]:
     """
-    Простейшие эвристики «качества» данных:
-    - слишком много пропусков;
-    - подозрительно мало строк;
-    и т.п.
+    Эвристики качества данных.
+
+    Возвращает словарь с флагами и деталями:
+    - has_constant_columns: есть ли константные (неизменные) колонки
+    - constant_columns_list: список таких колонок
+    - has_suspicious_id_duplicates: есть ли дубликаты в ID-колонках
+    - suspicious_id_columns: список таких колонок с дубликатами
+    - quality_score: интегральная оценка (0..1)
     """
     flags: Dict[str, Any] = {}
+
     flags["too_few_rows"] = summary.n_rows < 100
     flags["too_many_columns"] = summary.n_cols > 100
 
@@ -185,13 +190,10 @@ def compute_quality_flags(summary: DatasetSummary, missing_df: pd.DataFrame) -> 
     flags["max_missing_share"] = max_missing_share
     flags["too_many_missing"] = max_missing_share > 0.5
 
-    # Эвристика 1: has_constant_columns
     constant_cols = [col.name for col in summary.columns if col.unique <= 1]
     flags["has_constant_columns"] = len(constant_cols) > 0
-    # Сохраняем список таких колонок для отладки/отчета
     flags["constant_columns_list"] = constant_cols
 
-    # Эвристика 2: has_suspicious_id_duplicates
     suspicious_ids = []
     for col in summary.columns:
         name_lower = col.name.lower()
@@ -219,12 +221,6 @@ def compute_quality_flags(summary: DatasetSummary, missing_df: pd.DataFrame) -> 
     # Ограничиваем score от 0 до 1
     score = max(0.0, min(1.0, score))
     flags["quality_score"] = score
-
-    # Для отладки
-    print("\n--- DEBUG: Quality Flags ---")
-    for k, v in flags.items():
-        print(f"{k}: {v}")
-    print("----------------------------\n")
 
     return flags
 
