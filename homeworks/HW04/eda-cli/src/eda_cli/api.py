@@ -30,84 +30,86 @@ app = FastAPI(
 _processing_stats: List[Dict[str, Any]] = []
 
 
-# ==================== PYDANTIC MODELS ====================
-
 class QualityResponse(BaseModel):
-    """Стандартный ответ для эндпоинтов качества"""
     ok_for_model: Dict[str, bool]
+    flags: Dict[str, Any]
+    quality_score: float
     latency_ms: float
 
 
 class QualityRequest(BaseModel):
-    """Запрос для POST /quality с данными"""
     data: Dict[str, Any]
     quality_threshold: float = 0.7
 
-
-# ==================== HEALTH CHECK ====================
 
 @app.get("/health", summary="Проверка доступности сервиса")
 def health_check() -> Dict[str, str]:
     return {"status": "ok", "version": "0.4.0"}
 
 
-# ==================== ОБЯЗАТЕЛЬНЫЕ ЭНДПОИНТЫ ====================
-
 @app.post("/quality", response_model=QualityResponse, summary="Вычислить метрики качества")
 async def quality(request: QualityRequest) -> QualityResponse:
     """
     Вычисляет метрики качества для переданных данных.
 
-    Возвращает:
-    - ok_for_model: словарь с результатами проверки моделей
-    - latency_ms: время обработки в миллисекундах
+    Args:
+        request: JSON с данными и порогом качества
+
+    Returns:
+        QualityResponse с ok_for_model, flags, quality_score и latency_ms
     """
     start_time = time.time()
 
     try:
-        # Преобразуем данные в DataFrame для анализа
-        df = pd.DataFrame([request.data] if isinstance(request.data, dict) else request.data)
+        df = pd.DataFrame([request.data])
 
         summary = summarize_dataset(df)
         missing_df = missing_table(df)
         flags = compute_quality_flags(summary, missing_df)
 
-        # Определяем, пригодны ли данные для различных моделей
+        quality_score = flags.get("quality_score", 0.0)
+
+        has_missing = flags.get("has_missing_values", False)
+        has_constants = flags.get("has_constant_columns", False)
+
         ok_for_model = {
-            "regression": not flags.get("has_missing_values", False),
-            "classification": not flags.get("has_missing_values", False),
-            "clustering": not flags.get("has_constant_columns", False),
-            "neural_network": flags.get("quality_score", 0) >= request.quality_threshold,
+            "regression": not has_missing,
+            "classification": not has_missing,
+            "clustering": not has_constants,
+            "neural_network": quality_score >= request.quality_threshold,
         }
 
         latency_ms = (time.time() - start_time) * 1000
 
+        logger.info(f"Качество данных рассчитано: score={quality_score:.2f}, latency={latency_ms:.2f}ms")
+
         return QualityResponse(
             ok_for_model=ok_for_model,
+            flags={k: v for k, v in flags.items() if isinstance(v, (bool, int, float))},
+            quality_score=quality_score,
             latency_ms=round(latency_ms, 2)
         )
 
     except Exception as e:
-        logger.error(f"Ошибка в /quality: {e}")
+        logger.error(f"Ошибка при расчёте качества: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка: {e}")
 
 
 @app.post("/quality-from-csv", response_model=QualityResponse, summary="Метрики качества из CSV файла")
 async def quality_from_csv(file: UploadFile = File(...)) -> QualityResponse:
     """
-    Вычисляет метрики качества для всех данных из CSV файла.
+    Вычисляет метрики качества из загруженного CSV файла.
 
-    Возвращает:
-    - ok_for_model: словарь с результатами проверки для каждой модели
-    - latency_ms: время обработки в миллисекундах
+    Args:
+        file: CSV файл для анализа
+
+    Returns:
+        QualityResponse с ok_for_model, flags, quality_score и latency_ms
     """
     start_time = time.time()
 
     if not file.filename.endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Некорректный формат файла. Пожалуйста, загрузите .csv файл.",
-        )
+        raise HTTPException(status_code=400, detail="Используйте CSV файл")
 
     try:
         contents = await file.read()
@@ -118,31 +120,33 @@ async def quality_from_csv(file: UploadFile = File(...)) -> QualityResponse:
         missing_df = missing_table(df)
         flags = compute_quality_flags(summary, missing_df)
 
-        # Определяем пригодность для различных типов моделей
+        quality_score = flags.get("quality_score", 0.0)
+
+        has_missing = flags.get("has_missing_values", False)
+        has_constants = flags.get("has_constant_columns", False)
+
         ok_for_model = {
-            "regression": not flags.get("has_missing_values", False) and summary.n_rows > 10,
-            "classification": not flags.get("has_missing_values", False) and summary.n_rows > 10,
-            "clustering": not flags.get("has_constant_columns", False) and summary.n_cols > 2,
-            "neural_network": flags.get("quality_score", 0) >= 0.7,
+            "regression": not has_missing and summary.n_rows > 10,
+            "classification": not has_missing and summary.n_rows > 10,
+            "clustering": not has_constants and summary.n_cols > 2,
+            "neural_network": quality_score >= 0.7,
         }
 
         latency_ms = (time.time() - start_time) * 1000
 
-        logger.info(f"Обработан файл '{file.filename}' за {latency_ms:.2f} мс.")
+        logger.info(f"CSV '{file.filename}' обработан: score={quality_score:.2f}")
 
         return QualityResponse(
             ok_for_model=ok_for_model,
+            flags={k: v for k, v in flags.items() if isinstance(v, (bool, int, float))},
+            quality_score=quality_score,
             latency_ms=round(latency_ms, 2)
         )
 
     except Exception as e:
-        logger.error(f"Ошибка при обработке файла: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Внутренняя ошибка сервера: {e}"
-        )
+        logger.error(f"Ошибка при обработке CSV: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка: {e}")
 
-
-# ==================== РАСШИРЕННЫЕ ЭНДПОИНТЫ ====================
 
 @app.post("/quality-flags-from-csv", summary="Получить все флаги качества из CSV")
 async def get_quality_flags_from_csv(file: UploadFile = File(...)) -> JSONResponse:
