@@ -1,0 +1,16 @@
+{
+  "model_name": "Stacking",
+  "test_metrics": {
+    "accuracy": 0.97872,
+    "f1": 0.7387033398821218,
+    "roc_auc": 0.8956394104470208
+  },
+  "test_size": 6250,
+  "train_size": 18750,
+  "random_state": 42,
+  "feature_count": 60,
+  "class_distribution_test": {
+    "0": 5943,
+    "1": 307
+  }
+}

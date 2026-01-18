@@ -1,0 +1,34 @@
+{
+  "DecisionTree": {
+    "best_params": {
+      "criterion": "entropy",
+      "max_depth": 10,
+      "min_samples_leaf": 5,
+      "min_samples_split": 2
+    },
+    "best_cv_score": 0.5677069927577425,
+    "test_f1": 0.5955882352941176,
+    "test_accuracy": 0.9648
+  },
+  "RandomForest": {
+    "best_params": {
+      "class_weight": "balanced",
+      "max_depth": 10,
+      "max_features": "sqrt",
+      "min_samples_leaf": 10,
+      "n_estimators": 100
+    },
+    "best_cv_score": 0.6949871872732002,
+    "test_f1": 0.7311072056239016,
+    "test_accuracy": 0.97552
+  },
+  "AdaBoost": {
+    "best_params": {
+      "learning_rate": 1.0,
+      "n_estimators": 200
+    },
+    "best_cv_score": 0.6703778551403803,
+    "test_f1": 0.718562874251497,
+    "test_accuracy": 0.97744
+  }
+}
